@@ -1,0 +1,56 @@
+{
+  "name": "dsh-digital-hub",
+  "version": "1.0.0",
+  "description": "数字中枢：六层记忆 + 情绪追踪 + 技能管理，永久与遗忘分级",
+  "type": "module",
+  "main": "index.mjs",
+  "license": "MIT",
+  "author": {
+    "name": "qiumingzhi2006-web",
+    "url": "https://github.com/qiumingzhi2006-web"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qiumingzhi2006-web/dsh-digital-hub.git"
+  },
+  "homepage": "https://github.com/qiumingzhi2006-web/dsh-digital-hub",
+  "keywords": ["dsh", "dsh-plugin", "memory", "emotion", "skills", "context"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": "./index.mjs",
+    "./client": "./client.mjs",
+    "./memory": "./memory.mjs",
+    "./llm": "./llm.mjs",
+    "./settings": "./settings.mjs",
+    "./star": "./star.mjs",
+    "./emotion": "./emotion.mjs",
+    "./skills": "./skills.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.mjs",
+    "memory.mjs",
+    "llm.mjs",
+    "settings.mjs",
+    "client.mjs",
+    "star.mjs",
+    "emotion.mjs",
+    "skills.mjs",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json"
+  ],
+  "engines": { "node": ">=20" }
+}
