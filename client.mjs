@@ -14,7 +14,7 @@
  *        保存写文件；重载插件后生效（页面上写清楚了）。
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-digital-hub',
+  id: '@local/dsh-digital-hub',
   factory: (require) => {
     const module = { exports: {} }
     const exports = module.exports
@@ -73,6 +73,7 @@ window.__ModuleLoader__.load({
       '.dmt-badge{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:99px;border:1px solid transparent;font-size:11px;line-height:1;cursor:pointer;user-select:none;white-space:nowrap}',
       '.dmt-badge-work{background:rgba(180,120,20,.16);border-color:rgba(180,120,20,.55);color:var(--dsw-alias-label-warning,#b47814)}',
       '.dmt-badge-exempt{background:transparent;border-color:rgba(180,120,20,.55);color:var(--dsw-alias-label-warning,#b47814)}',
+      '.dmt-badge-silent{background:transparent;border-color:rgba(90,110,180,.55);color:var(--dsw-alias-label-info,#5a6eb4)}',
       '.dmt-badge-takeover{background:rgba(59,109,17,.14);border-color:rgba(59,109,17,.45);color:var(--dsw-alias-label-success,#3b6d11)}',
       '.dmt-badge-plain{background:transparent;border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}',
       '.dmt-pop{position:absolute;right:0;bottom:28px;z-index:50;width:270px;padding:12px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base,#fff);box-shadow:0 10px 32px rgba(0,0,0,.35);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}',
@@ -237,9 +238,11 @@ window.__ModuleLoader__.load({
 
       if (!sessionId || !info) return null
       const kind = info.mode === 'work' ? 'work'
+        : info.mode === 'silent' ? 'silent'
         : info.mode === 'exempt' ? 'exempt'
           : info.label === '记忆接管' ? 'takeover' : 'plain'
       const tone = kind === 'work' ? 'dmt-badge-work'
+        : kind === 'silent' ? 'dmt-badge-silent'
         : kind === 'exempt' ? 'dmt-badge-exempt'
           : kind === 'takeover' ? 'dmt-badge-takeover' : 'dmt-badge-plain'
 
@@ -262,12 +265,17 @@ window.__ModuleLoader__.load({
         h('p', { className: 'dmt-hint' },
           info.mode === 'work'
             ? '工作模式：不注入记忆、不压缩历史，记忆照常记录（粗骨架）。'
-            : info.mode === 'exempt'
-              ? '这个会话开过工作模式且对话过，已永久保留历史、不再被记忆接管；即使关掉工作模式也不会恢复压缩。'
-              : info.label === '记忆接管'
-                ? '记忆接管：每轮注入记忆块，并用记忆替代对话历史。'
-                : '普通：注入或历史接管至少有一项被配置关掉，记忆不接管这个会话。'),
+            : info.mode === 'silent'
+              ? '静默模式：这一段对话不写进记忆（不记 L1/L2、不做整理），但上下文照常压缩——旧轮次会被收起，只在会话里留一条占位。'
+              : info.mode === 'exempt'
+                ? '这个会话开过工作模式且对话过，已永久保留历史、不再被记忆接管；即使关掉工作模式也不会恢复压缩。'
+                : info.label === '记忆接管'
+                  ? '记忆接管：每轮注入记忆块，并用记忆替代对话历史。'
+                  : '普通：注入或历史接管至少有一项被配置关掉，记忆不接管这个会话。'),
         h('div', { className: 'dmt-actions' },
+          info.mode === 'silent'
+            ? h('button', { className: 'dmt-btn', disabled: !!busy, onClick: () => act('silent-off') }, busy === 'silent-off' ? '切换中…' : '关闭静默模式')
+            : h('button', { className: 'dmt-btn', disabled: !!busy, onClick: () => act('silent-on') }, busy === 'silent-on' ? '切换中…' : '开启静默模式（不记记忆）'),
           info.mode === 'work'
             ? h('button', { className: 'dmt-btn', disabled: !!busy, onClick: () => act('work-off') }, busy === 'work-off' ? '切换中…' : '关闭工作模式')
             : h('button', { className: 'dmt-btn', disabled: !!busy, onClick: () => act('work-on') }, busy === 'work-on' ? '切换中…' : '开启工作模式'),
@@ -784,4 +792,3 @@ window.__ModuleLoader__.load({
     return module.exports
   },
 })
-

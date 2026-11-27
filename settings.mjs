@@ -788,6 +788,8 @@ function normalizeSessionRecord(rec) {
   const r = rec && typeof rec === 'object' ? rec : {}
   return {
     workMode: r.workMode === true ? true : r.workMode === false ? false : null,
+    // 静默模式：不写入记忆，但历史照常压缩（只丢上下文，不落库）
+    silent: r.silent === true,
     everWorked: r.everWorked === true,
     turns: Math.max(0, Math.trunc(Number(r.turns) || 0)),
     lastActiveAt: Number(r.lastActiveAt) || 0,
@@ -842,18 +844,31 @@ export function saveSessions(state, opts = {}) {
 }
 
 /**
- * 单点模式判定：work / exempt / normal。
+ * 单点模式判定：work / silent / exempt / normal。
  * - work：显式开启，或没有显式选择时跟随全局默认；
+ * - silent：显式开启「不记记忆但正常压缩」，优先于工作模式；
  * - exempt：开过工作模式且确实对话过，现在虽已关闭，但仍不做接管；
  * - normal：其余（是否注入/压缩还要看 inject/compaction 开关）。
  */
 export function resolveSessionMode(state, sessionId, globalWork = false) {
   const sid = String(sessionId || '')
   const rec = sid ? state?.sessions?.[sid] : null
+  if (rec?.silent === true) return 'silent'
   if (rec?.workMode === true) return 'work'
   if (rec?.workMode === false) return rec.everWorked && rec.turns > 0 ? 'exempt' : 'normal'
   if (globalWork === true) return 'work'
   return rec?.everWorked && rec?.turns > 0 ? 'exempt' : 'normal'
+}
+
+/** 设置某会话的静默模式（不记记忆、照常压缩）；与工作模式互斥 */
+export function setSessionSilent(state, sessionId, silent) {
+  const sid = String(sessionId || '').trim()
+  if (!sid) return null
+  const rec = state.sessions[sid] || normalizeSessionRecord({})
+  rec.silent = silent === true
+  if (rec.silent) rec.workMode = false
+  state.sessions[sid] = rec
+  return rec
 }
 
 /** 设置某会话的显式工作模式；关闭时不清 everWorked（豁免由此保留） */
@@ -895,10 +910,11 @@ export function recordSessionTurn(state, sessionId, { wasWorkLike = false } = {}
 
 /** 给页面/状态用：只读摘要 */
 export function sessionStats(state) {
-  const out = { total: 0, work: 0, exempt: 0, normal: 0 }
+  const out = { total: 0, work: 0, silent: 0, exempt: 0, normal: 0 }
   for (const rec of Object.values(state?.sessions || {})) {
     out.total++
-    if (rec.workMode === true) out.work++
+    if (rec.silent === true) out.silent++
+    else if (rec.workMode === true) out.work++
     else if (rec.everWorked && rec.turns > 0) out.exempt++
     else out.normal++
   }
@@ -1197,6 +1213,10 @@ export function installApi(ctx, opts = {}) {
         api.setMode?.(sid, true)
       } else if (action === 'work-off') {
         api.setMode?.(sid, false)
+      } else if (action === 'silent-on') {
+        api.setSilent?.(sid, true)
+      } else if (action === 'silent-off') {
+        api.setSilent?.(sid, false)
       } else if (action === 'clear-exemption') {
         if (body.confirm !== true) {
           json(res, 400, {
@@ -1209,7 +1229,7 @@ export function installApi(ctx, opts = {}) {
         api.clearExemption?.(sid)
         log('SESSION_EXEMPT_CLEAR', sid)
       } else {
-        json(res, 400, { ok: false, error: 'action 只能是 work-on / work-off / clear-exemption' })
+        json(res, 400, { ok: false, error: 'action 只能是 work-on / work-off / silent-on / silent-off / clear-exemption' })
         return
       }
       json(res, 200, { ok: true, ...(api.get?.(sid) || {}) })

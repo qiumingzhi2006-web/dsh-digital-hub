@@ -32,7 +32,7 @@ import {
   loadConfig, configPath, logPath, statusPath, contextPath, sessionsPath,
   resolveDataDir, toEngineCfg, toLlmCfg, installApi,
   loadSessions, saveSessions, resolveSessionMode, setSessionWorkMode,
-  clearSessionExemption, recordSessionTurn, sessionStats,
+  setSessionSilent, clearSessionExemption, recordSessionTurn, sessionStats,
   SCHEMA, getPath, setPath, isReloadPath,
 } from './settings.mjs'
 import { logEmotion, getEmotions, emotionStats } from './emotion.mjs'
@@ -241,7 +241,7 @@ export async function compactSurface(session, mem, opts = {}) {
 
   // 固定锚点：不带轮数、不带时间，保证它作为可缓存前缀的一部分逐轮稳定。
   // DSH 只支持 surfaceOp: replace，没有删除操作；替换必须留一条消息当锚点。
-  const placeholder = '（历史已归档到长期记忆）'
+  const placeholder = String(opts.placeholder || '').trim() || '（历史已归档到长期记忆）'
   try {
     session.append('user/message', {
       role: 'user',
@@ -420,6 +420,8 @@ export function apply(ctx, patchConfig = {}) {
     const m = modeOf(sid)
     return m === 'work' || m === 'exempt'
   }
+  /** 静默模式：不写记忆，但历史照常压缩 */
+  const isSilent = (sid) => modeOf(sid) === 'silent'
   /** 共享 L1：只要有一个会话处于工作模式/已豁免，就启用工作模式的大容量 */
   const anyWorkLike = () => {
     if (globalWorkDefault()) return true
@@ -429,6 +431,7 @@ export function apply(ctx, patchConfig = {}) {
   const sessionModeLabel = (sid) => {
     const mode = modeOf(sid)
     if (mode === 'work') return '工作模式'
+    if (mode === 'silent') return '静默模式 · 不记记忆'
     if (mode === 'exempt') return '工作模式 · 已豁免'
     const inject = runCfg.inject?.enabled !== false
     const compaction = runCfg.compaction?.enabled !== false
@@ -1035,6 +1038,26 @@ export function apply(ctx, patchConfig = {}) {
       audit('COMPACT_SKIP', `reason=session-${mode}`)
       return null
     }
+    // 静默模式：不写记忆，但历史照常压缩（更早的轮次直接收起，不归档到库里）
+    if (mode === 'silent') {
+      if (runCfg.compaction.enabled === false || !sessionObj) {
+        audit('COMPACT_SKIP', 'reason=silent-disabled')
+        return null
+      }
+      if (compacting) return null
+      compacting = true
+      try {
+        return await compactSurface(sessionObj, mem, {
+          keepTurns: Math.max(1, Number(runCfg.compaction.keepTurns) || 0),
+          archiveChars: Number(runCfg.compaction.archiveChars) || 1200,
+          alreadyArchived: true, // 静默模式不落库，跳过归档写入
+          placeholder: '（更早的历史已收起：静默模式不记记忆）',
+          audit,
+        })
+      } finally {
+        compacting = false
+      }
+    }
     if (runCfg.compaction.enabled === false) return null
     if (!sessionObj) return null
     if (runCfg.inject.enabled === false && (Number(runCfg.compaction.keepTurns) || 0) === 0) {
@@ -1094,7 +1117,7 @@ export function apply(ctx, patchConfig = {}) {
         if (!t) return
         buf.user.push(t.slice(0, capFor(sid).user))
         buf.chars += t.length
-        prefetchSemantic(t.slice(0, 200))
+        if (!isSilent(sid)) prefetchSemantic(t.slice(0, 200))
         return
       }
 
@@ -1129,6 +1152,15 @@ export function apply(ctx, patchConfig = {}) {
       if (buf.chars > MAX_BUFFER_CHARS || buf.user.length + buf.bot.length + buf.tools.size > MAX_BUFFER_ROWS) {
         audit('BUFFER_TRUNCATED', `session=${sid} chars=${buf.chars}`)
         buf.user.length = Math.min(buf.user.length, 50)
+      }
+
+      // 静默模式：这一轮的东西不写库（连 turns 都不记），只把历史照常压掉
+      if (isSilent(sid)) {
+        buffers.delete(sid)
+        Promise.resolve()
+          .then(() => compactTurn(sessionObj, { alreadyArchived: true }))
+          .catch((e) => audit('COMPACT_FAIL', `silent ${e?.message ?? e}`))
+        return
       }
 
       // 确实产生过真人轮次才记 turns；工作模式/已豁免时置 everWorked（豁免的依据）。
@@ -1324,6 +1356,7 @@ export function apply(ctx, patchConfig = {}) {
       mode,
       label: sessionModeLabel(sid),
       workMode: rec?.workMode ?? null,
+      silent: rec?.silent === true,
       everWorked: rec?.everWorked === true,
       turns: rec?.turns || 0,
       lastActiveAt: rec?.lastActiveAt || 0,
@@ -1346,6 +1379,15 @@ export function apply(ctx, patchConfig = {}) {
       flushSessions()
       recomputeWorkCapacity()
       audit('SESSION_MODE', `${id} workMode=${on === true}`)
+      return sessionInfo(id)
+    },
+    setSilent(sid, on) {
+      const id = String(sid || '').trim()
+      if (!id) throw new Error('缺 sessionId')
+      setSessionSilent(sessionState, id, on === true)
+      flushSessions()
+      recomputeWorkCapacity()
+      audit('SESSION_SILENT', `${id} silent=${on === true}`)
       return sessionInfo(id)
     },
     clearExemption(sid) {
